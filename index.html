@@ -1,0 +1,303 @@
+<!DOCTYPE HTML>
+<head>
+    <title>Cardcast search</title>
+    <script src="localforage.min.js"></script>
+    <style>
+head, body {
+    height: 100%;
+}
+
+body {
+    margin: none;
+    padding: none;
+    font-family: Lato, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 1em;
+}
+
+#decks > tr > td {
+    cursor: pointer;
+}
+
+#deck {
+    width: 100%;
+    display: flex;
+    flex-flow: row;
+}
+
+.flex-column {
+    display: flex;
+    flex-flow: column;
+}
+
+.flex-row {
+    display: flex;
+    flex-flow: row;
+}
+
+.expand {
+    flex: 1 0 auto;
+}
+
+.shrink {
+    flex: 0 1 auto;
+}
+
+.search-bar {
+    display: flex;
+    flex-flow: row;
+}
+
+.search-bar > input {
+    flex: 1 0 auto;
+}
+
+.response {
+    color: green;
+}
+    </style>
+</head>
+<body>
+    <form id="search-form" class="search-bar">
+        <label for="query"><b>Search decks:&nbsp;</b></label>
+        <input id="query">
+        <button id="search-button">Go!</button>
+    </form>
+    <table id="decks-table" class="expand">
+        <thead><tr><th>Name</th><th>Author</th><th>Example</th></tr></thead>
+        <tbody id="decks">
+        </tbody>
+    </table>
+    <form id="deck-form" class="search-bar">
+        <label for="code"><b>Deck code:&nbsp;</b></label>
+        <input id="code">
+        <button id="deck-button">Go!</button>
+    </form>
+    <form id="filter-form" class="search-bar">
+        <label for="filter"><b>Filter cards:&nbsp;</b></label>
+        <input id="filter">
+    </form>
+    <div id="deck" class="expand">
+        <div id="calls_wrapper" class="expand">
+            <center><h3>Calls</h3></center>
+            <div id="calls">
+            </div>
+        </div>
+        <div id="responses_wrapper" class="expand">
+            <center><h3>Responses</h3></center>
+            <div id="responses">
+            </div>
+        </div>
+    </div>
+    <script>
+function get (url, callback) {
+    var request = new XMLHttpRequest();
+    request.onreadystatechange = function () {
+        if (request.readyState === XMLHttpRequest.DONE && request.status === 200)
+            callback(request.responseText);
+    };
+    request.open('GET', url);
+    request.send();
+}
+
+var $ = document.getElementById.bind(document),
+    $c = document.createElement.bind(document),
+    decks = null,
+    deck = null,
+    decksTable = $('decks-table'),
+    decksTbody = $('decks'),
+    deckDiv = $('deck'),
+    calls = $('calls'),
+    responses = $('responses'),
+    searchForm = $('search-form'),
+    queryInput = $('query'),
+    searchButton = $('search-button'),
+    deckForm = $('deck-form'),
+    codeInput = $('code'),
+    deckButton = $('deck-button'),
+    filterForm = $('filter-form'),
+    filterInput = $('filter'),
+    filterTimeout = 0;
+
+function show (element) {
+    element.style.display = element._display || null;
+}
+
+function hide (element) {
+    if (!element._display && element.style.display !== 'none')
+        element._display = element.style.display;
+    element.style.display = 'none';
+}
+
+function empty (element) {
+    var firstChild;
+    while ((firstChild = element.firstChild))
+        element.removeChild(firstChild);
+}
+
+function row (parent, content) {
+    var element = $c('div');
+    element.innerText = content;
+    parent.appendChild(element);
+    return element;
+}
+
+function tableRow (parent, content) {
+    var element = $c('tr');
+    for (var i = 0; i < content.length; i++) {
+        var cell = $c('td'),
+            column = content[i];
+        if (column.html)
+            cell.innerHTML = column.html;
+        else
+            cell.innerText = column;
+        element.appendChild(cell);
+    }
+    parent.appendChild(element);
+    return element;
+}
+
+function searchDeck (search) {
+    get('https://api.cardcastgame.com/v1/decks?search=' + encodeURI(search), function (response) {
+        decks = JSON.parse(response).results.data.map(function (deck) {
+            var sample_calls = deck.sample_calls[0].text,
+                sample_responses = deck.sample_responses.map(function (call) {
+                    return call.text[0];
+                }),
+                html = sample_calls.shift();
+            while (sample_calls.length)
+                html += '<span class="response">' + sample_responses.shift() + '</span>' + sample_calls.shift();
+            return {
+                code: deck.code,
+                name: deck.name,
+                author: '<a href="https://www.cardcastgame.com/browse/?search=author:' + deck.author.username + '">' + deck.author.username + '</a>',
+                html: html
+            };
+        });
+        refreshSearch();
+    });
+}
+
+function loadDeck (code) {
+    localforage.getItem('deck_' + code, function (err, value) {
+        if (value === null) {
+            get('https://api.cardcastgame.com/v1/decks/' + code + '/cards', function (response) {
+                deck = JSON.parse(response);
+                deck.calls = deck.calls.map(function (call) {
+                    return call.text.join('_');
+                });
+                deck.responses = deck.responses.map(function (response) {
+                    return response.text[0];
+                });
+                localforage.setItem('deck_' + code, deck);
+                refreshDeck();
+            });
+        } else {
+            deck = value;
+            refreshDeck();
+        }
+    });
+}
+
+function clearCache () {
+    localforage.clear();
+}
+
+function filter (value) {
+    value = value.trim();
+    var item = calls.firstElementChild;
+    do {
+        if (item.innerText.includes(value))
+            show(item);
+        else
+            hide(item);
+    } while ((item = item.nextElementSibling));
+    item = responses.firstElementChild;
+    do {
+        if (item.innerText.includes(value))
+            show(item);
+        else
+            hide(item);
+    } while ((item = item.nextElementSibling));
+}
+
+hide(decksTable);
+hide(deckDiv);
+
+searchForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    searchDeck(queryInput.value);
+});
+
+deckForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    loadDeck(codeInput.value);
+});
+
+filterInput.addEventListener('input', function () {
+    if (filterTimeout)
+        clearTimeout(filterTimeout);
+    filterTimeout = setTimeout(function () {
+        filter(filterInput.value);
+        clearTimeout(filterTimeout);
+        filterTimeout = 0;
+    }, 500);
+});
+
+decksTbody.addEventListener('click', function (event) {
+    var element = event.target;
+    while (element.parentElement) {
+        element = element.parentElement;
+        if (element.tagName === 'TR')
+            break;
+    }
+    if (element.tagName !== 'TR')
+        return;
+    codeInput.value = element.code;
+    loadDeck(element.code);
+});
+
+function refreshSearch () {
+    empty(decksTbody);
+    hide(deckDiv);
+    show(decksTable);
+    for (var i = 0; i < decks.length; i++) {
+        var currentDeck = decks[i],
+            row = tableRow(decksTbody, [currentDeck.name, {html: currentDeck.author}, {html: currentDeck.html}]);
+        row.code = currentDeck.code;
+    }
+}
+
+function refreshDeck () {
+    empty(calls);
+    empty(responses);
+    var i,
+        dCalls = deck.calls,
+        dResponses = deck.responses;
+    for (i = 0; i < dCalls.length; i++)
+        row(calls, dCalls[i]);
+    for (i = 0; i < dResponses.length; i++)
+        row(responses, dResponses[i]);
+    hide(decksTable);
+    show(deckDiv);
+}
+
+function getQuery () {
+    var vars = {},
+        hash,
+        href = window.location.href,
+        qIndex = href.indexOf('?'),
+        hIndex = href.indexOf('#'),
+        hashes = hIndex > qIndex ? (href.slice(qIndex + 1, hIndex)).split('&') : hIndex === -1 ? href.slice(qIndex + 1) : [];
+    for (var i = 0; i < hashes.length; i++) {
+        hash = hashes[i].split('=');
+        vars[hash[0]] = hash[1];
+    }
+    return vars;
+}
+
+var query = getQuery();
+
+if (query.code)
+    loadDeck(query.code);
+    </script>
+</body>
