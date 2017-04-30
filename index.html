@@ -14,6 +14,10 @@ body {
     font-size: 1em;
 }
 
+body > form > label {
+    min-width: 8em;
+}
+
 #decks > tr > td {
     cursor: pointer;
 }
@@ -57,9 +61,10 @@ body {
     </style>
 </head>
 <body>
+    <button id="clear-cache" onclick="clearCache();">Clear cache</button>
     <form id="search-form" class="search-bar">
         <label for="query"><b>Search decks:&nbsp;</b></label>
-        <input id="query">
+        <input id="query">&nbsp;
         <button id="search-button">Go!</button>
     </form>
     <table id="decks-table" class="expand">
@@ -69,7 +74,7 @@ body {
     </table>
     <form id="deck-form" class="search-bar">
         <label for="code"><b>Deck code:&nbsp;</b></label>
-        <input id="code">
+        <input id="code">&nbsp;
         <button id="deck-button">Go!</button>
     </form>
     <form id="filter-form" class="search-bar">
@@ -178,29 +183,32 @@ function searchDeck (search) {
     });
 }
 
-function loadDeck (code, filterValue) {
+function loadDeck (code) {
     codeInput.value = code;
-    localforage.getItem('deck_' + code, function (err, value) {
-        if (value === null) {
-            get('https://api.cardcastgame.com/v1/decks/' + code + '/cards', function (response) {
-                deck = JSON.parse(response);
-                deck.calls = deck.calls.map(function (call) {
-                    return call.text.join('_');
+    get('https://api.cardcastgame.com/v1/decks/' + code, function (metadata) {
+        metadata = JSON.parse(metadata);
+        localforage.getItem('deck_' + code, function (err, value) {
+            if (value === null || (new Date(metadata.updated_at) > new Date(value.updated))) {
+                get('https://api.cardcastgame.com/v1/decks/' + code + '/cards', function (response) {
+                    deck = JSON.parse(response);
+                    deck.calls = deck.calls.map(function (call) {
+                        return call.text.join('_');
+                    });
+                    deck.responses = deck.responses.map(function (response) {
+                        return response.text[0];
+                    });
+                    deck.updated = metadata.updated_at;
+                    localforage.setItem('deck_' + code, deck);
+                    refreshDeck();
+                    filter(filterInput.value);
                 });
-                deck.responses = deck.responses.map(function (response) {
-                    return response.text[0];
-                });
-                localforage.setItem('deck_' + code, deck);
+            } else {
+                deck = value;
                 refreshDeck();
-                if (filterValue)
-                    filter(filterValue);
-            });
-        } else {
-            deck = value;
-            refreshDeck();
-            if (filterValue)
-                filter(filterValue);
-        }
+                filter(filterInput.value);
+            }
+        });
+        //
     });
 }
 
@@ -309,7 +317,7 @@ var query = getQuery();
 if (query.code) {
     if (query.filter)
         filterInput.value = query.filter;
-    loadDeck(query.code, query.filter);
+    loadDeck(query.code);
 } else if (query.search) {
     searchDeck(query.search);
 }
