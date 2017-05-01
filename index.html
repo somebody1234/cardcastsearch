@@ -217,12 +217,12 @@ function clearCache () {
 }
 
 function filter (value) {
-    value = value.trim();
+    regex = new RegExp(value.trim().toLowerCase(), 'i');
     var item = calls.firstElementChild;
     if (!item)
         return;
     do {
-        if (item.innerText.includes(value))
+        if (regex.test(item.innerText))
             show(item);
         else
             hide(item);
@@ -231,7 +231,7 @@ function filter (value) {
     if (!item)
         return;
     do {
-        if (item.innerText.includes(value))
+        if (regex.test(item.innerText))
             show(item);
         else
             hide(item);
