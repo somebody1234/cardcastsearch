@@ -165,11 +165,11 @@ function searchDeck (search) {
     queryInput.value = search;
     get('https://api.cardcastgame.com/v1/decks?search=' + encodeURI(search), function (response) {
         decks = JSON.parse(response).results.data.map(function (deck) {
-            var sample_calls = deck.sample_calls[0].text,
+            var sample_calls = (deck.sample_calls[0] || {text: []}).text,
                 sample_responses = deck.sample_responses.map(function (call) {
                     return call.text[0];
                 }),
-                html = sample_calls.shift();
+                html = sample_calls.length ? sample_calls.shift() : '';
             while (sample_calls.length)
                 html += '<span class="response">' + sample_responses.shift() + '</span>' + sample_calls.shift();
             return {
